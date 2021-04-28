@@ -1,4 +1,3 @@
-from Simulator import preprosessing
 import numpy as np
 
 class Yahtzee:
@@ -50,6 +49,8 @@ class Yahtzee:
             "dice" : self.dice_state.copy(),
             "table" : self.score_table.copy(),
             "left_rollout" : self.left_rollout,
+            "upper_bonus" : self.upper_bonus,
+            "yat_bonus" : self.yahtzee_bonus,
             }
         return state
         
@@ -64,7 +65,7 @@ class Yahtzee:
     
     def calcScoretable(self, dice_state = None):
         if dice_state is None:
-            dice_state = self.dice_state.copy()
+            dice_state = self.dice_state
         '''
         Return score mask
         '''
@@ -108,7 +109,7 @@ class Yahtzee:
         return legal_actions
 
 
-    def step(self, action):
+    def step_with_str(self, action):
         action = eval(action)
         reward = 0
         if type(action) is tuple:        
@@ -129,23 +130,69 @@ class Yahtzee:
                 #reset Turn
                 self.left_rollout = 2
                 self.dice_state = self.rolloutDice()
-        else:
-            print("INVAILD ACTION")
-            return
+        else:            
+            raise ValueError("INVAILD ACTION")
         
         if not self.upper_bonus and sum([a for a in self.score_table[:6] if a is not None]) >= 63:
             reward += 35
+            self.upper_bonus = True
         if not self.yahtzee_bonus and self.score_table[-1] == 50:
             reward += 100
+            self.yahtzee_bonus = True
         
         state = {
             "dice" : self.dice_state.copy(),
             "table" : self.score_table.copy(),
             "left_rollout" : self.left_rollout,
+            "upper_bonus" : self.upper_bonus,
+            "yat_bonus" : self.yahtzee_bonus,
             }
         done = False if None in self.score_table else True
         info = self.left_rollout
         return state, reward, done, info
+
+    def step(self, int_action):        
+        if int_action < 31:
+            action = self.int2rollout[int_action]
+            action = eval(action)
+        else:
+            action = self.int2input[int_action]
+                
+        reward = 0
+        if type(action) in (tuple, set):
+            rollout = list(set(action))
+            self.dice_state = self.rolloutDice(self.dice_state, rollout)
+            self.left_rollout -= 1            
+        elif type(action) is int:        
+            value = self.calcScoretable()[action]
+            self.score_table[action] = value
+            reward += value
+                
+            #reset Turn
+            left_rollout = 2
+            dice_state = self.rolloutDice()
+        else:
+            raise ValueError("INVAILD ACTION")
+                    
+        if not self.upper_bonus and sum([a for a in self.score_table[:6] if a is not None]) >= 63:
+            reward += 35
+            self.upper_bonus = True
+        if not self.yahtzee_bonus and self.score_table[-1] == 50:
+            reward += 100
+            self.yahtzee_bonus = True
+        
+        state = {
+            "dice" : self.dice_state.copy(),
+            "table" : self.score_table.copy(),
+            "left_rollout" : self.left_rollout,
+            "upper_bonus" : self.upper_bonus,
+            "yat_bonus" : self.yahtzee_bonus,
+            }
+
+        done = False if None in self.score_table else True
+        info = self.left_rollout
+        return state, reward, done, info
+
 
     def render(self):
         legal_mask = [1] * 13
@@ -163,9 +210,9 @@ class Yahtzee:
 # def calc_cases(n, r):
 #     return np.math.factorial(n) / np.math.factorial(r) / np.math.factorial(n - r)
 
-def gamePlay():
+def gamePlay():    
     env = Yahtzee()
-    dice_state = env.reset()
+    env.reset()
     done = False        
     score = 0
     while not done:
@@ -175,9 +222,10 @@ def gamePlay():
         input_score = [x for x in legal_actions if x >= 31]
         action = input(f"{input_score}\n")
         state, reward, done, info = env.step(action)
-        preprosessing(state)
+        preprocessing(state)
         score += reward
     print(f"Score : {score}")
 
 if __name__ == "__main__":
+    from Simulator import preprocessing
     gamePlay()
