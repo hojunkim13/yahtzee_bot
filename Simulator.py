@@ -38,6 +38,10 @@ rollout2int = {
             }        
 int2rollout = {v:k for k,v in rollout2int.items()}
 
+expectation = [1.88, 5.28, 8.57, 12.16, 15.69, 19.19,
+                21.66, 13.10, 22.59,
+                29.46, 32.71, 22.01, 16.87]
+
 
 def preprocessing(state):
     #5 * 6
@@ -45,7 +49,8 @@ def preprocessing(state):
     dice_state = np.eye(6)[dice_state]
 
     #13 * 6
-    empty_mask = list(map(lambda x : 1 if x is None else 0, state["table"]))
+    reward_table = calcScoretable(state["dice"], state["table"])
+    empty_mask = list(map(lambda x : 1 if x != 0 else 0, reward_table))
     left_table = [6 * [a] for a in empty_mask]
 
     #1 * 6
@@ -106,13 +111,21 @@ def calcScoretable(dice_state, score_table = None):
 
 
 def getLegalAction(left_rollout, score_table):
-    legal_dice_actions = list(range(31)) if left_rollout else []        
     legal_score_actions = [idx+31 for idx, occupied in enumerate(score_table) if occupied is None]
-    legal_actions = legal_dice_actions + legal_score_actions
-    return legal_actions
+    if len(legal_score_actions) == 0:
+        return []
+    else:
+        legal_dice_actions = list(range(31)) if left_rollout else []        
+        legal_actions = legal_dice_actions + legal_score_actions
+        return legal_actions
+
+def calcOutcome(state):
+    score = sum(state["table"]) / 100
+    return score
 
 
 def step_with_int(state_dict, int_action):
+    turn_end = False
     if int_action < 31:
         action = int2rollout[int_action]
         action = eval(action)
@@ -137,6 +150,7 @@ def step_with_int(state_dict, int_action):
         reward += value
             
         #reset Turn
+        turn_end = True
         left_rollout = 2
         dice_state = rolloutDice()
     else:
@@ -158,5 +172,4 @@ def step_with_int(state_dict, int_action):
         "yat_bonus" : yat_bonus
         }
     done = False if None in score_table else True
-    info = left_rollout
-    return state, reward, done, info
+    return state, reward, done, turn_end
