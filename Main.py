@@ -6,7 +6,7 @@ from Simulator import *
 
 lr = 1e-3
 batch_size = 128
-n_sim = 500
+n_sim = 100
 maxlen = 10000
 n_episode = 10000
 state_dim = (16,4,4)
