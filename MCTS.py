@@ -1,7 +1,6 @@
 from Simulator import *
 import numpy as np
 import torch
-import time
 
 
 
@@ -12,35 +11,56 @@ class Node:
         self.move_index = move_index
         self.W = {}
         self.N = {}
+        self.P = {}
         self.child = {}
         self.legal_moves = getLegalAction(state_dict["left_rollout"],
                                         state_dict["table"])
-        if self.legal_moves == []:
-            self.N
+        if len(self.legal_moves) == 0:
+            self.terminal = True
+        else:
+            self.terminal = False
+        self.calcProb()
+        
+    def calcProb(self, net = None):
+        if net is None:
+            for moves in self.legal_moves:
+                self.P[moves] = 1 / len(self.legal_moves)
+        elif self.isRoot():
+            state = preprocessing(self.state)
+            state = torch.tensor(state, dtype = torch.float).cuda().unsqueeze(0)
+            with torch.no_grad():
+                probs, _ = net(state)
+                probs = probs.squeeze().cpu().numpy()
+        
+            for moves in self.legal_moves:
+                self.P[moves] = probs[moves]            
+        else:
+            raise ValueError
+            
 
-    def calcUCT(self, c_uct = 1):                
-        UCT_values = {}
+    def calcPUCT(self, c_puct = 1):
+        PUCT_values = {}
         Qs = {}
-        EXPs = {}
+        Us = {}
         N_total = sum(self.N.values())
-        #for act in self.legal_moves:
 
         for idx in self.child.keys():
             w = self.W[idx]
             n = self.N[idx]
-            Qs[idx] = w/n            
-            EXPs[idx] = c_uct * np.sqrt(np.log(N_total) / n)
-        
-        for (idx, Q), exp in zip(Qs.items(), EXPs.values()):
-            UCT_values[idx] = Q + exp        
-        return UCT_values
+            p = self.P[idx]
+            Qs[idx] = w/n
+            Us[idx] = c_puct * (p/n) * np.sqrt(N_total) / (1 + n)
+            PUCT_values[idx] = Qs[idx] + Us[idx]
+        return PUCT_values
 
     def isLeaf(self):
+        if self.terminal:
+            return True
         for move in self.legal_moves:        
             try:
                 self.child[move]
             except KeyError:
-                return True
+                return True        
         return False
         
 
@@ -64,20 +84,23 @@ class MCTS:
 
     def reset(self, state):
         self.root_node = Node(None, None, state)
+        self.root_node.calcProb(self.net)
         self.root_state = state
         
     def selection(self, node):
         if node.isLeaf():
             return node
         else:
-            UCT_values = node.calcUCT()            
-            max_value_idx = max(UCT_values, key=UCT_values.get)
+            PUCT_values = node.calcPUCT()            
+            max_value_idx = max(PUCT_values, key=PUCT_values.get)
             
             node = node.child[max_value_idx]
             return self.selection(node)
         
 
-    def expansion(self, node):                
+    def expansion(self, node):
+        if node.terminal:
+            return 
         left_indice = list(set(node.legal_moves) - (set(node.child.keys())))
         idx = np.random.choice(left_indice)
         state_, _, _, _ = step_with_int(node.state, idx)
@@ -103,7 +126,7 @@ class MCTS:
             for act in act_history:
                 state, _, done, _ = step_with_int(state, act)
             if done:
-                value = sum(state["table"]) 
+                value = calcOutcome(state)
                 values.append(value)
             else:
                 state_ppd = preprocessing(state)                
@@ -114,14 +137,6 @@ class MCTS:
         values_ = torch.clip(values_, 0, None).sum().cpu().item()
         mean_value = (sum(values) + values_ ) / k
         return mean_value
-
-    def rollout(self, state):
-        done = False
-        while not done:
-            action = np.random.randint(44)
-            state, _,done,_ = step_with_int(state, action)
-        value = sum(state["table"]) 
-        return value
 
 
     def backpropagation(self, node, value):                
@@ -136,27 +151,19 @@ class MCTS:
                 
     def search_cycle(self):
         leaf_node = self.selection(self.root_node)
-        expanded_node = self.expansion(leaf_node)
-        expanded_value = self.simulation(expanded_node)
-        self.backpropagation(expanded_node, expanded_value)
+        if not leaf_node.terminal:
+            expanded_node = self.expansion(leaf_node)
+            expanded_value = self.simulation(expanded_node)
+            self.backpropagation(expanded_node, expanded_value)
+        else:
+            value = self.simulation(leaf_node)
+            self.backpropagation(leaf_node, value)
 
-    def search(self, n_sim, step_count):
+    def search(self, n_sim):
         for _ in range(n_sim):
-            self.search_cycle()
-        
-        
-        #Max-Robust child
-        # while True:
-        #     UCT_values = self.root_node.calcUCT()
-        #     max_value_idx = max(UCT_values, key=UCT_values.get)
-        #     max_visit_idx = max(self.root_node.N, key = self.root_node.N.get)
-        #     if max_value_idx == max_visit_idx:
-        #         break
-        #     else:
-        #         self.search_cycle()
-        #         _ += 1
-        max_visit_idx = max(self.root_node.N, key = self.root_node.N.get)
-        return max_visit_idx
+            self.search_cycle()        
+            
+        return deepcopy(self.root_node.N)
     
 
 

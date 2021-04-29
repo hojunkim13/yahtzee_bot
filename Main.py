@@ -6,7 +6,7 @@ from Simulator import *
 
 lr = 1e-3
 batch_size = 128
-n_sim = 500
+n_sim = 100
 maxlen = 10000
 n_episode = 10000
 state_dim = (16,4,4)
@@ -25,14 +25,14 @@ def main():
         agent.step_count = 0
         while not done:
             #env.render()
-            tmp_memory.append(preprocessing(state))
             agent.mcts.reset(state)
-            action = agent.getAction()
+            action, probs = agent.getAction()
+            tmp_memory.append((preprocessing(state), probs))
             if action not in agent.mcts.root_node.legal_moves:
                 print("warning")
             state, reward, done, info = env.step(action)    
             score += reward            
-        outcome = sum(state["table"])
+        outcome = calcOutcome(state)
         agent.pushMemory(tmp_memory, outcome)
         loss = agent.learn()
 
