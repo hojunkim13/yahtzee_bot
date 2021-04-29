@@ -140,19 +140,22 @@ class MCTS:
         expanded_value = self.simulation(expanded_node)
         self.backpropagation(expanded_node, expanded_value)
 
-    def search(self, n_sim):
+    def search(self, n_sim, step_count):
         for _ in range(n_sim):
             self.search_cycle()
+        
+        
         #Max-Robust child
-        while True:
-            UCT_values = self.root_node.calcUCT()
-            max_value_idx = max(UCT_values, key=UCT_values.get)
-            max_visit_idx = max(self.root_node.N, key = self.root_node.N.get)
-            if max_value_idx == max_visit_idx:
-                break
-            else:
-                self.search_cycle()
-                _ += 1
+        # while True:
+        #     UCT_values = self.root_node.calcUCT()
+        #     max_value_idx = max(UCT_values, key=UCT_values.get)
+        #     max_visit_idx = max(self.root_node.N, key = self.root_node.N.get)
+        #     if max_value_idx == max_visit_idx:
+        #         break
+        #     else:
+        #         self.search_cycle()
+        #         _ += 1
+        max_visit_idx = max(self.root_node.N, key = self.root_node.N.get)
         return max_visit_idx
     
 

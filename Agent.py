@@ -4,6 +4,8 @@ from Simulator import *
 from MCTS import MCTS
 from collections import deque
 import random
+import time
+
 
 class Agent:
     def __init__(self, lr, batch_size, maxlen, n_sim) -> None:
@@ -16,8 +18,8 @@ class Agent:
         self.n_sim = n_sim
         
 
-    def getAction(self):
-        action = self.mcts.search(self.n_sim)        
+    def getAction(self):        
+        action = self.mcts.search(self.n_sim, self.step_count)
         self.step_count += 1
         return action
     

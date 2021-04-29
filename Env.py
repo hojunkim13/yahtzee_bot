@@ -167,10 +167,10 @@ class Yahtzee:
             value = self.calcScoretable()[action]
             self.score_table[action] = value
             reward += value
+            self.left_rollout = 2
+            self.dice_state = self.rolloutDice()
                 
             #reset Turn
-            left_rollout = 2
-            dice_state = self.rolloutDice()
         else:
             raise ValueError("INVAILD ACTION")
                     

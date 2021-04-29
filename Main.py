@@ -6,7 +6,7 @@ from Simulator import *
 
 lr = 1e-3
 batch_size = 128
-n_sim = 50
+n_sim = 500
 maxlen = 10000
 n_episode = 10000
 state_dim = (16,4,4)
@@ -24,7 +24,7 @@ def main():
         score = 0
         agent.step_count = 0
         while not done:
-            env.render()
+            #env.render()
             tmp_memory.append(preprocessing(state))
             agent.mcts.reset(state)
             action = agent.getAction()
