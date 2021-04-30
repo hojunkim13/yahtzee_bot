@@ -44,26 +44,21 @@ expectation = [1.88, 5.28, 8.57, 12.16, 15.69, 19.19,
 
 
 def preprocessing(state):
-    #5 * 6
     dice_state = [a-1 for a in state["dice"]]
-    dice_state = np.eye(6)[dice_state]
-
-    #13 * 6
-    reward_table = calcScoretable(state["dice"], state["table"])
-    empty_mask = list(map(lambda x : 1 if x != 0 else 0, reward_table))
-    left_table = [6 * [a] for a in empty_mask]
-
-    #1 * 6
-    left_rollout = [np.eye(6)[state["left_rollout"]]]
-
-    #1 * 6
-    left_turn = min(sum(empty_mask), 5)
-    left_turn = [np.eye(6)[left_turn]]
-
-    #2 * 6 
-    bonus = [6 * [state["upper_bonus"]], 6 * [state["yat_bonus"]]]
+    dice_state = np.eye(6)[dice_state].sum(axis=0).astype(int)
+    dice_state = dice_state / 5
     
-    total_state = np.concatenate((dice_state, left_table, left_rollout, left_turn, bonus), axis = 0)
+    reward_table = calcScoretable(state["dice"], state["table"])    
+    reward_table = np.array(reward_table) / 50.
+
+    left_rollout = np.eye(3)[state["left_rollout"]]
+
+    turn = 13 - state["table"].count(None)
+    turn = np.eye(13)[turn]
+
+    bonus = np.array((state["upper_bonus"], state["yat_bonus"]), dtype = int)
+    
+    total_state = np.concatenate((dice_state, reward_table, left_rollout, turn, bonus), axis = -1)
     return total_state
 
 

@@ -19,15 +19,9 @@ class Agent:
         
 
     def getAction(self):        
-        Ns = self.mcts.search(self.n_sim)
-        max_visit_idx = max(Ns, key = Ns.get)
-        non_legal_moves = list(set(range(44)) - set(Ns.keys()))
-        for move in non_legal_moves:
-            Ns[move] = 0
-        Ns = [v for k, v in sorted(Ns.items())]
-        probs = [n / sum(Ns) for n in Ns]
+        action = self.mcts.search(self.n_sim)
         self.step_count += 1
-        return max_visit_idx, probs
+        return action
     
     
     def pushMemory(self, tmp_memory, outcome):
@@ -37,29 +31,25 @@ class Agent:
                 
 
     def learn(self):
+        self.net.train()
         idx_max = len(self.memory)        
         indice = random.sample(range(idx_max), min(self.batch_size, idx_max))
         memory = np.array(self.memory, dtype = object)[indice]
         outcome = np.array(self.outcome_memory, dtype = np.float32)[indice]
 
         
-        S = np.vstack(memory[:,0]).reshape(-1,22,6).astype(np.float32)
-        P = np.vstack(memory[:,1]).reshape(-1,44).astype(np.float32)
-        
+        S = np.vstack(memory).astype(np.float32)
         S = torch.tensor(S, dtype = torch.float).cuda()
-        P = torch.tensor(P, dtype = torch.float).cuda()
-        
-        policy, value = self.net(S)
+                
+        value = self.net(S)
         outcome = torch.tensor(outcome, dtype = torch.float).cuda().view(*value.shape)
         
-        value_loss = torch.square(value - outcome).mean()
-        policy_loss = (- P * torch.log(policy)).mean()
-        total_loss = value_loss + policy_loss
-
+        value_loss = torch.square(value - outcome).mean()            
         self.optimizer.zero_grad()
-        total_loss.backward()
-        self.optimizer.step()        
-        return total_loss.item()
+        value_loss.backward()
+        self.optimizer.step()
+        self.net.eval()
+        return value_loss.item()
 
     def save(self, env_name):
         torch.save(self.net.state_dict(), f"./model/{env_name}.pt")

@@ -11,7 +11,6 @@ class Node:
         self.move_index = move_index
         self.W = {}
         self.N = {}
-        self.P = {}
         self.child = {}
         self.legal_moves = getLegalAction(state_dict["left_rollout"],
                                         state_dict["table"])
@@ -19,27 +18,10 @@ class Node:
             self.terminal = True
         else:
             self.terminal = False
-        self.calcProb()
         
-    def calcProb(self, net = None):
-        if net is None:
-            for moves in self.legal_moves:
-                self.P[moves] = 1 / len(self.legal_moves)
-        elif self.isRoot():
-            state = preprocessing(self.state)
-            state = torch.tensor(state, dtype = torch.float).cuda().unsqueeze(0)
-            with torch.no_grad():
-                probs, _ = net(state)
-                probs = probs.squeeze().cpu().numpy()
-        
-            for moves in self.legal_moves:
-                self.P[moves] = probs[moves]            
-        else:
-            raise ValueError
             
-
-    def calcPUCT(self, c_puct = 1):
-        PUCT_values = {}
+    def calcUCT(self, c_puct = 0.005):
+        UCT_values = {}
         Qs = {}
         Us = {}
         N_total = sum(self.N.values())
@@ -47,11 +29,19 @@ class Node:
         for idx in self.child.keys():
             w = self.W[idx]
             n = self.N[idx]
-            p = self.P[idx]
             Qs[idx] = w/n
-            Us[idx] = c_puct * (p/n) * np.sqrt(N_total) / (1 + n)
-            PUCT_values[idx] = Qs[idx] + Us[idx]
-        return PUCT_values
+            Us[idx] = c_puct  * np.sqrt(np.log(N_total) / n)
+            UCT_values[idx] = Qs[idx] + Us[idx]
+        return UCT_values
+    
+    def calcVal(self):
+        Qs = {}
+        for idx in self.child.keys():
+            w = self.W[idx]
+            n = self.N[idx]
+            Qs[idx] = w/n
+        
+        return Qs
 
     def isLeaf(self):
         if self.terminal:
@@ -66,10 +56,6 @@ class Node:
 
     def isRoot(self):
         return self.parent is None
-
-    def asRoot(self):
-        self.parent = None
-        self.move_index = None
         
     def getPath(self, path_list):
         if not self.isRoot():
@@ -84,23 +70,19 @@ class MCTS:
 
     def reset(self, state):
         self.root_node = Node(None, None, state)
-        self.root_node.calcProb(self.net)
         self.root_state = state
         
     def selection(self, node):
         if node.isLeaf():
             return node
         else:
-            PUCT_values = node.calcPUCT()            
-            max_value_idx = max(PUCT_values, key=PUCT_values.get)
-            
-            node = node.child[max_value_idx]
+            UCT_values = node.calcUCT()            
+            child_idx = max(UCT_values, key=UCT_values.get)            
+            node = node.child[child_idx]
             return self.selection(node)
         
 
     def expansion(self, node):
-        if node.terminal:
-            return 
         left_indice = list(set(node.legal_moves) - (set(node.child.keys())))
         idx = np.random.choice(left_indice)
         state_, _, _, _ = step_with_int(node.state, idx)
@@ -130,11 +112,14 @@ class MCTS:
                 values.append(value)
             else:
                 state_ppd = preprocessing(state)                
-                state_batch.append(state_ppd)                            
-        state_batch = torch.tensor(state_batch, dtype = torch.float).cuda().view(-1,22,6)
-        with torch.no_grad():
-            _, values_ = self.net(state_batch)
-        values_ = torch.clip(values_, 0, None).sum().cpu().item()
+                state_batch.append(state_ppd)
+        if len(state_batch) != 0:
+            state_batch = torch.tensor(state_batch, dtype = torch.float).cuda()
+            with torch.no_grad():
+                values_ = self.net(state_batch)
+            values_ = torch.clip(values_, 0, None).sum().cpu().item()
+        else:
+            values_ = 0
         mean_value = (sum(values) + values_ ) / k
         return mean_value
 
@@ -156,41 +141,14 @@ class MCTS:
             expanded_value = self.simulation(expanded_node)
             self.backpropagation(expanded_node, expanded_value)
         else:
-            value = self.simulation(leaf_node)
-            self.backpropagation(leaf_node, value)
+            leaf_value = calcOutcome(leaf_node.state)
+            self.backpropagation(leaf_node, leaf_value)
 
     def search(self, n_sim):
         for _ in range(n_sim):
-            self.search_cycle()        
-            
-        return deepcopy(self.root_node.N)
+            self.search_cycle()
+
+        val = self.root_node.calcVal()
+        action = max(val, key = val.get)
+        return action
     
-
-
-# def main():
-#     n_episode = 100
-#     n_sim = 400
-#     env.goal = 999999
-#     mcts = MCTS()
-#     score_list = []
-#     for e in range(n_episode):
-#         start_time = time.time()
-#         done = False
-#         score = 0
-#         grid = env.reset()
-#         mcts.setRoot(grid)        
-#         while not done:        
-#             action = mcts.getAction(n_sim)
-#             grid, reward, done, info = env.step(action)
-#             score += reward
-#             mcts.setRoot(grid, action)            
-#         mcts.saveMemory(e)
-#         score_list.append(score)
-#         average_score = np.mean(score_list[-100:])        
-#         spending_time = time.time() - start_time
-#         print(f"Episode : {e+1} / {n_episode}, Score : {score}, Max Tile : {info}, Average: {average_score:.1f}")
-#         print(f"SPENDING TIME : {spending_time:.1f} Sec")
-#     env.close()
-
-# if __name__ == "__main__":
-#     main()

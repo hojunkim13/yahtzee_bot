@@ -1,31 +1,27 @@
 import torch.nn as nn
 
+
 class Network(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv1d(22, 64, 1, 1, 0),
-            nn.BatchNorm1d(64),
+            nn.Linear(37, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(),  
+            nn.Linear(128, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),  
+            nn.Linear(256, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),  
+            nn.Linear(512, 1024),
+            nn.BatchNorm1d(1024),
             nn.ReLU(),
-            nn.Conv1d(64, 64, 1, 1, 0),
-            nn.BatchNorm1d(64),
-            nn.ReLU(),
-            nn.Conv1d(64, 64, 1, 1, 0),
-            nn.BatchNorm1d(64),
-            nn.ReLU(),
-            nn.Conv1d(64, 64, 1, 1, 0),
-            nn.BatchNorm1d(64),
-            nn.ReLU(),
-            nn.Flatten(),
+            nn.Dropout(0.5),
         )
-        self.policy = nn.Sequential(
-            nn.Linear(64 * 6 , 256),
-            nn.ReLU(),
-            nn.Linear(256, 44),
-            nn.Softmax(-1)
-        )
+
         self.value = nn.Sequential(
-            nn.Linear(64 * 6 , 256),
+            nn.Linear(1024, 256),
             nn.ReLU(),
             nn.Linear(256, 1),        
         )
@@ -33,6 +29,6 @@ class Network(nn.Module):
 
     def forward(self, x):
         x = self.net(x)
-        policy = self.policy(x)
         value = self.value(x)
-        return policy, value
+        return value
+    

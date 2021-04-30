@@ -201,7 +201,6 @@ class Yahtzee:
             if self.score_table[idx] is not None:
                 legal_mask[idx] = 0     
         reward_table = [b for a, b in zip(legal_mask, score_mask) if a]
-        print("\n\n")
         print("DICE :" ,self.dice_state)        
         print("TABLE :", self.score_table, "SUM :", sum([a for a in self.score_table if a is not None]))
         print("REWARD :", reward_table)
