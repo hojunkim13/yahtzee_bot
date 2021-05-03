@@ -13,23 +13,34 @@ class MCTS:
         self.values = [0] * 44
         self.visits = [1e-8] * 44
 
-    def simulation(self, n_sim):                
+    def simulation(self, n_sim, k):                
         #주사위남음
         legal_moves = getLegalAction(self.root_state["left_rollout"],
                                     self.root_state["table"])        
         for _ in range(n_sim):
             first_action = np.random.choice(legal_moves)
-            state,_,done,_ = step_with_int(self.root_state, first_action)
-            while not done:                
-                state,_,done,_ = self.doAction(state)
-            outcome = calcOutcome(state)
-            self.values[first_action] += outcome
+            state,_, done,_ = step_with_int(self.root_state, first_action)
+            if done:
+                value = calcOutcome(state)
+            else:
+                value = self.rollout(state, k)
+            self.values[first_action] += value
             self.visits[first_action] += 1
         mean_values = [a / b for a,b in zip(self.values, self.visits)]
         best_act = np.argmax(mean_values)
         return best_act
         
-
+    def rollout(self, target_state, k):
+        done = False
+        values = []
+        for _ in range(k):
+            state = target_state
+            while not done:
+                state, _, done, _ = self.doAction(state)
+            value = calcOutcome(state)
+            values.append(value)
+            done = False
+        return np.mean(values)
 
     def eval(self, state):
         reward_table = calcScoretable(state["dice"], state["table"])            
@@ -64,7 +75,7 @@ def convertAction(int_action):
 
 def main():
     n_episode = 1
-    n_sim = 3000
+    n_sim = 100
     env = Yahtzee()
     mcts = MCTS()
     score_list = []    
@@ -75,7 +86,7 @@ def main():
         while not done:
             mcts.setRoot(state)
             env.render()
-            action = mcts.simulation(n_sim)
+            action = mcts.simulation(n_sim, 1000)
             print(convertAction(action),"\n")
             state, reward, done, _ = env.step(action)    
             score += reward
