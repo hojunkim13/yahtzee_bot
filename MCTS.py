@@ -5,63 +5,30 @@ import torch
 
 
 class Node:
-    def __init__(self, parent, move_index, state_dict):
+    def __init__(self, parent, move_idx, state_dict):
         self.parent = parent
         self.state = state_dict
-        self.move_index = move_index
-        self.W = {}
-        self.N = {}
+        self.move_idx = move_idx
+        self.W = 0
+        self.N = 0
         self.child = {}
         self.legal_moves = getLegalAction(state_dict["left_rollout"],
                                         state_dict["table"])
-        if len(self.legal_moves) == 0:
-            self.terminal = True
-        else:
-            self.terminal = False
-        
-            
-    def calcUCT(self, c_puct = 0.005):
-        UCT_values = {}
-        Qs = {}
-        Us = {}
-        N_total = sum(self.N.values())
-
-        for idx in self.child.keys():
-            w = self.W[idx]
-            n = self.N[idx]
-            Qs[idx] = w/n
-            Us[idx] = c_puct  * np.sqrt(np.log(N_total) / n)
-            UCT_values[idx] = Qs[idx] + Us[idx]
-        return UCT_values
-    
-    def calcVal(self):
-        Qs = {}
-        for idx in self.child.keys():
-            w = self.W[idx]
-            n = self.N[idx]
-            Qs[idx] = w/n
-        
-        return Qs
+        self.untried_moves = self.legal_moves.copy()
+        self.terminal = len(self.legal_moves) == 0
 
     def isLeaf(self):
-        if self.terminal:
-            return True
-        for move in self.legal_moves:        
-            try:
-                self.child[move]
-            except KeyError:
-                return True        
-        return False
+        return self.untried_moves != []
         
-
     def isRoot(self):
         return self.parent is None
         
     def getPath(self, path_list):
         if not self.isRoot():
-            path_list.insert(0, self.move_index)
+            path_list.insert(0, self.move_idx)
             self.parent.getPath(path_list)
         
+
 
 
 class MCTS:
@@ -72,25 +39,35 @@ class MCTS:
         self.root_node = Node(None, None, state)
         self.root_state = state
         
+    def calcUCT(self, node, c_puct = 0.005):
+        UCT_values = {}
+        Qs = {}
+        Us = {}
+        N_total = sum(node.N.values())
+
+        for idx in node.child.keys():
+            w = node.W[idx]
+            n = node.N[idx]
+            Qs[idx] = w/n
+            Us[idx] = c_puct  * np.sqrt(np.log(N_total) / n)
+            UCT_values[idx] = Qs[idx] + Us[idx]
+        return UCT_values
+
     def selection(self, node):
-        if node.isLeaf():
-            return node
-        else:
-            UCT_values = node.calcUCT()            
-            child_idx = max(UCT_values, key=UCT_values.get)            
-            node = node.child[child_idx]
-            return self.selection(node)
+        UCT_values = self.calcUCT(node)
+        max_idx = max(UCT_values, key = UCT_values.get)
+        return node.child[max_idx]
         
+    def expansion(self, node, state):
+        move = np.random.choice(node.untried_moves)
+        state_, _, _, _ = step_with_int(state, move)
+        node.untried_moves.remove(move)
+        
+        child_node = Node(node, move, state_)
+        node.child[move] = child_node    
+        return child_node, state_
 
-    def expansion(self, node):
-        left_indice = list(set(node.legal_moves) - (set(node.child.keys())))
-        idx = np.random.choice(left_indice)
-        state_, _, _, _ = step_with_int(node.state, idx)
-        child_node = Node(node, idx, state_)
-        node.child[idx] = child_node
-        return child_node
-
-    def simulation(self, child_node, k = 10):
+    def rollout(self, child_node, state, k = 10):
         '''
         1. Move to leaf state follow action history
         2. Start simulation from leaf state
@@ -98,21 +75,11 @@ class MCTS:
         '''
         values = []
         state_batch = []
-        act_history = []
-        #vs = []
-        child_node.getPath(act_history)
-        
         for _ in range(k):
-            #sim to child grid
-            state = self.root_state
-            for act in act_history:
-                state, _, done, _ = step_with_int(state, act)
-            if done:
-                value = calcOutcome(state)
-                values.append(value)
-            else:
-                state_ppd = preprocessing(state)                
-                state_batch.append(state_ppd)
+            #sim to child grid                                            
+            state_ppd = preprocessing(state)                
+            state_batch.append(state_ppd)
+            
         if len(state_batch) != 0:
             state_batch = torch.tensor(state_batch, dtype = torch.float).cuda()
             with torch.no_grad():
@@ -126,29 +93,35 @@ class MCTS:
 
     def backpropagation(self, node, value):                
         if not node.isRoot():
-            if node.move_index in node.parent.W.keys():
-                node.parent.W[node.move_index] += value
-                node.parent.N[node.move_index] += 1
+            if node.move_idx in node.parent.W.keys():
+                node.parent.W[node.move_idx] += value
+                node.parent.N[node.move_idx] += 1
             else:
-                node.parent.W[node.move_index] = value
-                node.parent.N[node.move_index] = 1
+                node.parent.W[node.move_idx] = value
+                node.parent.N[node.move_idx] = 1
             self.backpropagation(node.parent, value)
-                
-    def search_cycle(self):
-        leaf_node = self.selection(self.root_node)
-        if not leaf_node.terminal:
-            expanded_node = self.expansion(leaf_node)
-            expanded_value = self.simulation(expanded_node)
-            self.backpropagation(expanded_node, expanded_value)
-        else:
-            leaf_value = calcOutcome(leaf_node.state)
-            self.backpropagation(leaf_node, leaf_value)
 
-    def search(self, n_sim):
+
+    def search(self, n_sim, root_state):
+        self.root_node = Node(None, None, root_state)
+        
         for _ in range(n_sim):
-            self.search_cycle()
+            node = self.root_node
+            state = root_state
 
-        val = self.root_node.calcVal()
-        action = max(val, key = val.get)
+            while not node.isLeaf():
+                node = self.selection(node)
+                state = step_with_int(state, node.move_idx)
+
+            if node.terminal:
+                leaf_value = calcOutcome(state)
+                self.backpropagation(node, leaf_value)                
+            else:
+                expanded_node, state = self.expansion(node, state)
+                expanded_value = self.rollout(expanded_node, state)
+                self.backpropagation(expanded_node, expanded_value)
+    
+        
+        action = max(self.root_node.child.values, key = lambda x : x.N).move_idx
         return action
     
