@@ -116,6 +116,10 @@ def getLegalAction(left_rollout, score_table):
 
 def calcOutcome(state):
     score = sum(state["table"]) / 100
+    if state["upper_bonus"]:
+        score += .35
+    if state["yat_bonus"]:
+        score += 1
     return score
 
 

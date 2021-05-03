@@ -1,85 +1,146 @@
 from Simulator import *
 import numpy as np
+
+
 from Env import Yahtzee
 
 
+n_sim = 1000
+k = 50
+n_episode = 10
+render = False
+env = Yahtzee()
 
-class MCTS:
-    def __init__(self):
-        pass
-    
-    def setRoot(self, state):
-        self.root_state = state
-        self.values = [0] * 44
-        self.visits = [1e-8] * 44
 
-    def simulation(self, n_sim):                
-        #주사위남음
-        legal_moves = getLegalAction(self.root_state["left_rollout"],
-                                    self.root_state["table"])        
+class Node:
+    def __init__(self, parent, move_idx, state_dict):
+        self.parent = parent
+        self.state = state_dict
+        self.move_idx = move_idx
+        self.W = 0
+        self.N = 0
+        self.child = {}
+        self.legal_moves = getLegalAction(state_dict["left_rollout"],
+                                        state_dict["table"])
+        self.untried_moves = self.legal_moves.copy()
+        self.terminal = len(self.legal_moves) == 0
+
+    def isLeaf(self):
+        return self.terminal or self.untried_moves != []
+        
+    def isRoot(self):
+        return self.parent is None
+        
+    def getPath(self, path_list):
+        if not self.isRoot():
+            path_list.insert(0, self.move_idx)
+            self.parent.getPath(path_list)
+        
+
+class MCTS:    
+    def calcUCT(self, node, c_puct = 0.01):
+        UCT_values = {}
+        N_total = node.N
+        Qs = {}
+        Us = {}
+
+        for idx in node.child.keys():
+            w = node.child[idx].W
+            n = node.child[idx].N
+            Qs[idx] = w/n
+            Us[idx] = c_puct * np.sqrt(np.log(N_total) / n)
+            UCT_values[idx] = Qs[idx] + Us[idx]
+        return UCT_values
+
+    def selection(self, node):
+        UCT_values = self.calcUCT(node)
+        max_idx = max(UCT_values, key = UCT_values.get)
+        return node.child[max_idx]
+        
+    def expansion(self, node, state):
+        move = np.random.choice(node.untried_moves)
+        state_, _, _, _ = step_with_int(state, move)
+        node.untried_moves.remove(move)
+        
+        child_node = Node(node, move, state_)
+        node.child[move] = child_node    
+        return child_node, state_
+
+    def rollout(self, state, k = 10):
+        '''
+        1. Move to leaf state follow action history
+        2. Start simulation from leaf state
+        3. Calc average score via value network
+        '''
+        values = []        
+        for _ in range(k):
+            done = not state["table"].count(None)
+            state_ = state
+            #sim to child grid
+            while not done:
+                legal_moves = getLegalAction(state_["left_rollout"],
+                                                state_["table"])
+                move = np.random.choice(legal_moves)                                            
+                state_,_,done,_ = step_with_int(state_, move)
+            value = calcOutcome(state_)
+            values.append(value)
+        return np.mean(values)
+
+
+    def backpropagation(self, node, value):
+        node.W += value
+        node.N += 1
+        if not node.isRoot():
+            self.backpropagation(node.parent, value)
+
+
+    def search(self, n_sim, k, root_state):
+        self.root_node = Node(None, None, root_state)
+        
         for _ in range(n_sim):
-            first_action = np.random.choice(legal_moves)
-            state,_,done,_ = step_with_int(self.root_state, first_action)
-            while not done:                
-                state,_,done,_ = self.doAction(state)
-            outcome = calcOutcome(state)
-            self.values[first_action] += outcome
-            self.visits[first_action] += 1
-        mean_values = [a / b for a,b in zip(self.values, self.visits)]
-        best_act = np.argmax(mean_values)
-        return best_act
-        
+            node = self.root_node
+            state = root_state
 
+            while not node.isLeaf():
+                node = self.selection(node)
+                state,_,_,_ = step_with_int(state, node.move_idx)
 
-    def eval(self, state):
-        reward_table = calcScoretable(state["dice"], state["table"])            
-        gap = [b - a for a,b in zip(expectation, reward_table)]   
-        return gap
-
-    def simulDice(self, state):
-        # 재귀적으로 주사위 시뮬레이션        
-        if state["left_rollout"] == 0:            
-            return self.eval(state)
-        action = np.random.randint(31)
-        new_state,_,_,_ = step_with_int(state, action)
-        return self.simulDice(new_state)
-        
-
-    def doAction(self, state):
-        legal_actions = getLegalAction(state["left_rollout"],
-                                            state["table"])
-        action = np.random.choice(legal_actions)
-        return step_with_int(state, action)
-
-
-
-
-def convertAction(int_action):
-    if int_action < 31:
-        act = int2rollout[int_action]
-    else:
-        act = int2input[int_action] + 31
-    return act
+            if node.terminal:
+                leaf_value = calcOutcome(state)
+                self.backpropagation(node, leaf_value)                
+            else:
+                expanded_node, state = self.expansion(node, state)
+                expanded_value = self.rollout(state, k)
+                self.backpropagation(expanded_node, expanded_value)
+            
+        childs = self.root_node.child
+        visits = {k: v.N     for k, v in childs.items()}
+        values = {k: v.W/v.N for k, v in childs.items()}
+        action = max(values, key = values.get)
+        return action
+    
 
 
 def main():
-    n_episode = 1
-    n_sim = 3000
-    env = Yahtzee()
-    mcts = MCTS()
     score_list = []    
+    mcts = MCTS()
     for e in range(n_episode):        
         done = False
-        state = env.reset()
-        score = 0
+        state = env.reset()        
+        score = 0        
         while not done:
-            mcts.setRoot(state)
-            env.render()
-            action = mcts.simulation(n_sim)
-            print(convertAction(action),"\n")
+            action = mcts.search(n_sim, k, state)
+            if render:
+                env.render()
+                if action < 31:
+                    str_act = int2rollout[action]
+                else:
+                    str_act = int2input[action]
+                print(str_act, "\n")
+
             state, reward, done, _ = env.step(action)    
-            score += reward
-        #done        
+            score += reward                            
+        #done                
         score_list.append(score)
         average_score = np.mean(score_list[-100:])        
         print(f"Episode : {e+1} / {n_episode}, Score : {score}, Average: {average_score:.1f}")
