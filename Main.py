@@ -4,11 +4,11 @@ from Agent import Agent
 from collections import deque
 from Simulator import *
 
-lr = 1e-2
+lr = 1e-3
 batch_size = 256
-n_sim = 200
+n_sim = 1000
 
-maxlen = 100000
+maxlen = 50000
 n_episode = 10000
 agent = Agent(lr, batch_size, maxlen, n_sim)
 env = Yahtzee()
@@ -23,23 +23,19 @@ def main():
         score = 0
         agent.step_count = 0
         while not done:
-            #env.render()
-            agent.mcts.reset(state)
-            action = agent.getAction()
-            tmp_memory.append(preprocessing(state))
-            if action not in agent.mcts.root_node.legal_moves:
-                print("warning")
+            action = agent.getAction(state)
+            tmp_memory.append(preprocessing(state))        
             state, reward, done, _ = env.step(action)    
             score += reward            
         outcome = calcOutcome(state)
         agent.pushMemory(tmp_memory, outcome)
         
-        #done
-        if (e+1) % 10 == 0:
-            loss = agent.learn()
-            agent.save("Yahtzee")
-        else:
-            loss = 0
+        
+        #if (e+1) % 1 == 0:
+        loss = agent.learn()
+        agent.save("Yahtzee")
+        # else:
+        #     loss = 0
         score_list.append(score)
         average_score = np.mean(score_list[-100:])        
         print(f"Episode : {e+1} / {n_episode}, Score : {score}, Average: {average_score:.1f}, Loss : {loss:.3f}")

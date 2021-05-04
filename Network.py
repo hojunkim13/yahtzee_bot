@@ -26,6 +26,7 @@ class Network(nn.Module):
             nn.Linear(256, 1),        
         )
         self.cuda()
+        self.eval()
 
     def forward(self, x):
         x = self.net(x)

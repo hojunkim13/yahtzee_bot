@@ -12,14 +12,15 @@ class Agent:
         self.net = Network()
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr = lr, weight_decay=1e-4)
         self.batch_size = batch_size
-        self.mcts = MCTS(self.net)
+        self.mcts = MCTS()
         self.memory = deque(maxlen = maxlen)
         self.outcome_memory = deque(maxlen = maxlen)
         self.n_sim = n_sim
         
 
-    def getAction(self):        
-        action = self.mcts.search(self.n_sim)
+    def getAction(self, state):
+        
+        action = self.mcts.search(self.n_sim, self.net, state)        
         self.step_count += 1
         return action
     

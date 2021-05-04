@@ -18,7 +18,7 @@ class Node:
         self.terminal = len(self.legal_moves) == 0
 
     def isLeaf(self):
-        return self.untried_moves != []
+        return self.terminal or self.untried_moves != []
         
     def isRoot(self):
         return self.parent is None
@@ -29,27 +29,18 @@ class Node:
             self.parent.getPath(path_list)
         
 
-
-
 class MCTS:
-    def __init__(self, net):
-        self.net = net
-
-    def reset(self, state):
-        self.root_node = Node(None, None, state)
-        self.root_state = state
-        
-    def calcUCT(self, node, c_puct = 0.005):
+    def calcUCT(self, node, c_puct = 0.01):
         UCT_values = {}
+        N_total = node.N
         Qs = {}
         Us = {}
-        N_total = sum(node.N.values())
 
         for idx in node.child.keys():
-            w = node.W[idx]
-            n = node.N[idx]
+            w = node.child[idx].W
+            n = node.child[idx].N
             Qs[idx] = w/n
-            Us[idx] = c_puct  * np.sqrt(np.log(N_total) / n)
+            Us[idx] = c_puct * np.sqrt(np.log(N_total) / n)
             UCT_values[idx] = Qs[idx] + Us[idx]
         return UCT_values
 
@@ -67,42 +58,27 @@ class MCTS:
         node.child[move] = child_node    
         return child_node, state_
 
-    def rollout(self, child_node, state, k = 10):
-        '''
-        1. Move to leaf state follow action history
-        2. Start simulation from leaf state
-        3. Calc average score via value network
-        '''
-        values = []
-        state_batch = []
-        for _ in range(k):
-            #sim to child grid                                            
-            state_ppd = preprocessing(state)                
-            state_batch.append(state_ppd)
-            
-        if len(state_batch) != 0:
-            state_batch = torch.tensor(state_batch, dtype = torch.float).cuda()
-            with torch.no_grad():
-                values_ = self.net(state_batch)
-            values_ = torch.clip(values_, 0, None).sum().cpu().item()
+    def evalState(self, state, net):
+        done = not state["table"].count(None)            
+        if done:
+            value = calcOutcome(state)
         else:
-            values_ = 0
-        mean_value = (sum(values) + values_ ) / k
-        return mean_value
+            state = preprocessing(state)
+            state = torch.tensor(state, dtype = torch.float).cuda().unsqueeze(0)
+            with torch.no_grad():
+                value = net(state)
+                value = value.squeeze().item()            
+        return value
 
 
-    def backpropagation(self, node, value):                
+    def backpropagation(self, node, value):
+        node.W += value
+        node.N += 1
         if not node.isRoot():
-            if node.move_idx in node.parent.W.keys():
-                node.parent.W[node.move_idx] += value
-                node.parent.N[node.move_idx] += 1
-            else:
-                node.parent.W[node.move_idx] = value
-                node.parent.N[node.move_idx] = 1
             self.backpropagation(node.parent, value)
 
 
-    def search(self, n_sim, root_state):
+    def search(self, n_sim, net, root_state):
         self.root_node = Node(None, None, root_state)
         
         for _ in range(n_sim):
@@ -111,17 +87,19 @@ class MCTS:
 
             while not node.isLeaf():
                 node = self.selection(node)
-                state = step_with_int(state, node.move_idx)
+                state,_,_,_ = step_with_int(state, node.move_idx)
 
             if node.terminal:
                 leaf_value = calcOutcome(state)
                 self.backpropagation(node, leaf_value)                
             else:
                 expanded_node, state = self.expansion(node, state)
-                expanded_value = self.rollout(expanded_node, state)
+                expanded_value = self.evalState(state, net)
                 self.backpropagation(expanded_node, expanded_value)
-    
-        
-        action = max(self.root_node.child.values, key = lambda x : x.N).move_idx
+            
+        childs = self.root_node.child
+        #visits = {k: v.N     for k, v in childs.items()}
+        values = {k: v.W/v.N for k, v in childs.items()}
+        action = max(values, key = values.get)
         return action
     
