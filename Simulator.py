@@ -114,13 +114,13 @@ def getLegalAction(left_rollout, score_table):
         legal_actions = legal_dice_actions + legal_score_actions
         return legal_actions
 
-def calcOutcome(state):
-    score = sum(state["table"]) / 100
+def calcOutcome(state, mag=1e-2):
+    score = sum(state["table"])
     if state["upper_bonus"]:
-        score += .35
+        score += 35
     if state["yat_bonus"]:
-        score += 1
-    return score
+        score += 100
+    return score * mag
 
 
 def step_with_int(state_dict, int_action):
